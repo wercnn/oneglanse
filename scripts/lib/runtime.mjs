@@ -536,13 +536,18 @@ export async function ensureDockerNetwork(name) {
 	}
 }
 
-export async function waitForHttp(url, timeoutMs = 60_000) {
+export async function waitForHttp(url, timeoutMs = 120_000) {
 	const deadline = Date.now() + timeoutMs;
 
 	while (Date.now() < deadline) {
 		try {
-			const response = await fetch(url, { cache: "no-store" });
-			if (response.ok) {
+			// Any HTTP response (including redirects like the 307 from "/" to
+			// "/login") means the server is listening and ready to open.
+			const response = await fetch(url, {
+				cache: "no-store",
+				redirect: "manual",
+			});
+			if (response.status > 0) {
 				return;
 			}
 		} catch {}
