@@ -1,4 +1,5 @@
 export * from "./analysis/index.js";
+export * from "./apiCapture/openai.js";
 export * from "./llm/index.js";
 export * from "./prompt/index.js";
 export * from "./workspace/index.js";

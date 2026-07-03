@@ -19,6 +19,12 @@ const ServicesEnvSchema = z.object({
 	OPENAI_API_KEY: z.string().optional(),
 	ANTHROPIC_API_KEY: z.string().optional(),
 	ANALYSIS_LLM_PROVIDER: z.enum(["openai", "claude"]).default("openai"),
+	// Azure OpenAI — used by the web-vs-API comparison harness.
+	AZURE_OPENAI_ENDPOINT: z.string().trim().optional(),
+	AZURE_OPENAI_API_KEY: z.string().trim().optional(),
+	AZURE_OPENAI_DEPLOYMENT: z.string().trim().optional(),
+	AZURE_OPENAI_EMBEDDING_DEPLOYMENT: z.string().trim().optional(),
+	AZURE_OPENAI_API_VERSION: z.string().trim().default("preview"),
 });
 
 export const env = ServicesEnvSchema.parse(process.env);
