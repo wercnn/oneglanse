@@ -1,0 +1,11 @@
+{
+	"prompts": [
+		"Trendyol iyi bir alışveriş sitesi mi?",
+		"Trendyol mu Hepsiburada mı daha iyi?",
+		"Türkiye'deki en iyi e-ticaret sitesi hangisi?"
+	],
+	"brands": ["Trendyol", "Hepsiburada", "Amazon", "N11", "GittiGidiyor"],
+	"samples": 3,
+	"modes": ["raw", "grounded"],
+	"embeddings": false
+}
