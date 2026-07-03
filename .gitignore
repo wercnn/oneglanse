@@ -57,3 +57,6 @@ CODEBASE_MEMORY.md
 # Test / scratch data
 mockData/
 llm_results.json
+
+# Web-vs-API comparison harness output (reports + failure screenshots)
+apps/agent/compare-output/
