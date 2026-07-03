@@ -21,6 +21,7 @@ import {
 	captureOpenAiResponse,
 	type CapturedResponse,
 	type PromptResult,
+	type ReportOptions,
 } from "@oneglanse/services";
 import { z } from "zod";
 import { createAgent } from "./core/createAgent.js";
@@ -59,6 +60,7 @@ function errMessage(err: unknown): string {
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [5_000, 15_000, 45_000]; // between attempts; exponential, not jitter
 const RECYCLE_EVERY = 5; // proactive browser recycle every N web captures
+const RECYCLE_BACKOFF_MS = 15_000; // wait before retrying a failed recycle
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const randomBetween = (min: number, max: number) =>
@@ -133,10 +135,47 @@ export async function captureWeb(
 	let agent = await createAgent("chatgpt");
 	let sinceRecycle = 0;
 
-	const recycle = async () => {
+	// Recycle the browser (cleanup + fresh agent), retrying once after a backoff.
+	// Returns false if a working browser couldn't be launched — a dead browser
+	// must never crash the batch, so callers skip the sample and try again later.
+	const recycle = async (): Promise<boolean> => {
 		await agent.cleanup().catch(() => {});
-		agent = await createAgent("chatgpt");
-		sinceRecycle = 0;
+		for (let r = 1; r <= 2; r++) {
+			try {
+				agent = await createAgent("chatgpt");
+				sinceRecycle = 0;
+				return true;
+			} catch (err) {
+				console.error(`[web] recycle attempt ${r}/2 failed: ${errMessage(err)}`);
+				if (r < 2) await sleep(RECYCLE_BACKOFF_MS);
+			}
+		}
+		return false;
+	};
+
+	// Records the current sample as failed because the browser couldn't recycle.
+	const recordRecycleFailure = (
+		prompt: string,
+		p: number,
+		sample: number,
+		attempts: number,
+		started: number,
+	) => {
+		const error = "browser recycle failed";
+		push({ source: "web", prompt, sample, response: "", sources: [], error });
+		meta.push({
+			prompt,
+			promptIndex: p,
+			sample,
+			ok: false,
+			attempts,
+			recycledBrowser: true,
+			durationMs: Date.now() - started,
+			browsed: false,
+			error,
+			errorType: "recycle_failed",
+		});
+		sinceRecycle = RECYCLE_EVERY; // force a fresh recycle before the next sample
 	};
 
 	try {
@@ -149,8 +188,13 @@ export async function captureWeb(
 
 				if (sinceRecycle >= RECYCLE_EVERY) {
 					console.log("[web] proactive browser recycle");
-					await recycle();
-					recycledThisSample = true;
+					if (await recycle()) {
+						recycledThisSample = true;
+					} else {
+						console.error("[web] recycle failed twice — skipping sample, will retry recycle");
+						recordRecycleFailure(prompt, p, sample, 0, started);
+						continue;
+					}
 				}
 				sinceRecycle++;
 
@@ -203,8 +247,13 @@ export async function captureWeb(
 						// After a 2nd failure, a fresh page isn't enough — recycle the browser.
 						if (attempt === 2) {
 							console.log("[web] reactive browser recycle before final attempt");
-							await recycle();
-							recycledThisSample = true;
+							if (await recycle()) {
+								recycledThisSample = true;
+							} else {
+								console.error("[web] recycle failed twice — marking sample failed, continuing run");
+								recordRecycleFailure(prompt, p, sample, attempt, started);
+								break;
+							}
 						}
 						await sleep(BACKOFF_MS[attempt - 1] ?? 45_000);
 					}
@@ -246,6 +295,13 @@ async function captureApi(
 }
 
 async function main(): Promise<void> {
+	if (process.argv[2] === "--recompute") {
+		const jsonArg = process.argv[3];
+		if (!jsonArg) throw new Error("--recompute requires a path to a run JSON");
+		await recompute(path.resolve(process.cwd(), jsonArg));
+		return;
+	}
+
 	const config = loadConfig();
 	const model = config.model ?? process.env.AZURE_OPENAI_DEPLOYMENT;
 	if (!model) {
@@ -286,17 +342,64 @@ async function main(): Promise<void> {
 		embeddings: config.embeddings,
 	});
 
-	// Merge per-web-sample diagnostics into the report JSON.
+	// Merge per-web-sample diagnostics + raw captures into the report JSON.
+	// `results` lets the report be recomputed later (e.g. `--recompute`) with no
+	// new captures.
 	const reportObj = JSON.parse(json);
 	reportObj.webSamples = webMeta;
+	reportObj.results = results;
 
-	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const base = path.join(outDir, `report-${stamp}`);
+	writeReport(outDir, `report-${timestamp()}`, markdown, reportObj, csv);
+}
+
+function timestamp(): string {
+	return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function writeReport(
+	outDir: string,
+	baseName: string,
+	markdown: string,
+	reportObj: unknown,
+	csv: string,
+): string {
+	fs.mkdirSync(outDir, { recursive: true });
+	const base = path.join(outDir, baseName);
 	fs.writeFileSync(`${base}.md`, markdown);
 	fs.writeFileSync(`${base}.json`, JSON.stringify(reportObj, null, 2));
 	fs.writeFileSync(`${base}.csv`, csv);
-
 	console.log(`\nDone. Report written to:\n  ${base}.md\n  ${base}.json\n  ${base}.csv`);
+	return base;
+}
+
+/**
+ * Regenerates a report from an existing run's captured responses (no new
+ * captures), with embeddings forced on. Requires the run JSON to contain the
+ * raw `results` — reports written before capture persistence won't have them.
+ */
+async function recompute(jsonPath: string): Promise<void> {
+	const data = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+	const results: PromptResult[] | undefined = data.results;
+	if (!Array.isArray(results) || results.length === 0) {
+		throw new Error(
+			`${path.basename(jsonPath)} has no raw captured responses (\`results\`) — it predates ` +
+				"capture persistence, so embeddings can't be backfilled without re-capturing.",
+		);
+	}
+
+	const opts: ReportOptions = { ...data.options, embeddings: true };
+	console.log(
+		`Recomputing ${results.length} prompt(s) from ${path.basename(jsonPath)} with embeddings on…`,
+	);
+	const { markdown, json, csv } = await buildComparisonReport(results, opts);
+
+	const reportObj = JSON.parse(json);
+	reportObj.results = results;
+	if (data.webSamples) reportObj.webSamples = data.webSamples;
+
+	const outDir = path.resolve(here, "..", "compare-output");
+	writeReport(outDir, `recompute-${timestamp()}`, markdown, reportObj, csv);
+	console.log(`\n${markdown}`);
 }
 
 // Only run the full harness when invoked directly (so the module can be

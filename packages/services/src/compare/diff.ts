@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Source } from "@oneglanse/types";
 import { env } from "../env.js";
 import { azureOpenai } from "../llm/azure.js";
@@ -93,18 +94,91 @@ export function cosine(a: number[], b: number[]): number {
 	return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+/** SHA-256 of the trimmed text — cache key so identical texts embed once. */
+export function hashText(text: string): string {
+	return createHash("sha256").update(text.trim()).digest("hex");
+}
+
+/** Max inputs per embeddings request (well within the API limit). */
+const EMBED_BATCH = 96;
+
 /**
- * Embedding cosine similarity of two texts via the configured Azure embedding
- * deployment (AZURE_OPENAI_EMBEDDING_DEPLOYMENT). This is a math distance
- * between vectors, not an AI judging content. Returns 0 if either text is empty.
+ * Embeds many texts via the configured Azure embedding deployment, batching one
+ * array per request and deduplicating identical texts. Returns vectors keyed by
+ * content hash — the per-run embedding cache. A math distance, not an AI judge.
+ */
+export async function embedTexts(texts: string[]): Promise<Map<string, number[]>> {
+	const cache = new Map<string, number[]>();
+	const unique = [...new Set(texts.map((t) => t.trim()).filter((t) => t.length > 0))];
+	for (let i = 0; i < unique.length; i += EMBED_BATCH) {
+		const batch = unique.slice(i, i + EMBED_BATCH);
+		const res = await azureOpenai().embeddings.create({
+			model: env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT,
+			input: batch,
+		});
+		res.data.forEach((d, j) => {
+			const text = batch[j];
+			if (text) cache.set(hashText(text), d.embedding);
+		});
+	}
+	return cache;
+}
+
+function vectorsFor(cache: Map<string, number[]>, texts: string[]): number[][] {
+	return texts
+		.map((t) => cache.get(hashText(t)))
+		.filter((v): v is number[] => v !== undefined);
+}
+
+/** Cosine between two texts using precomputed vectors; null if either missing. */
+export function cachedCosine(
+	cache: Map<string, number[]>,
+	a: string,
+	b: string,
+): number | null {
+	const [va] = vectorsFor(cache, [a]);
+	const [vb] = vectorsFor(cache, [b]);
+	return va && vb ? cosine(va, vb) : null;
+}
+
+/** Mean cosine over all unordered pairs within one set; null if <2 vectors. */
+export function meanPairwiseCosine(
+	cache: Map<string, number[]>,
+	texts: string[],
+): number | null {
+	const vecs = vectorsFor(cache, texts);
+	if (vecs.length < 2) return null;
+	let sum = 0;
+	let n = 0;
+	for (let i = 0; i < vecs.length; i++) {
+		for (let j = i + 1; j < vecs.length; j++) {
+			sum += cosine(vecs[i] as number[], vecs[j] as number[]);
+			n++;
+		}
+	}
+	return sum / n;
+}
+
+/** Mean cosine over all cross pairs between two sets; null if either is empty. */
+export function meanCrossCosine(
+	cache: Map<string, number[]>,
+	textsA: string[],
+	textsB: string[],
+): number | null {
+	const va = vectorsFor(cache, textsA);
+	const vb = vectorsFor(cache, textsB);
+	if (va.length === 0 || vb.length === 0) return null;
+	let sum = 0;
+	for (const x of va) for (const y of vb) sum += cosine(x, y);
+	return sum / (va.length * vb.length);
+}
+
+/**
+ * Embedding cosine similarity of two texts via the Azure embedding deployment.
+ * Convenience wrapper over embedTexts; returns 0 if either text is empty.
  */
 export async function embeddingSimilarity(a: string, b: string): Promise<number> {
 	if (!a.trim() || !b.trim()) return 0;
-	const res = await azureOpenai().embeddings.create({
-		model: env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT ?? "text-embedding-3-small",
-		input: [a, b],
-	});
-	const [first, second] = res.data;
-	if (!first || !second) return 0;
-	return cosine(first.embedding, second.embedding);
+	const cache = await embedTexts([a, b]);
+	return cachedCosine(cache, a, b) ?? 0;
 }

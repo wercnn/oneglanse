@@ -23,8 +23,12 @@ const ServicesEnvSchema = z.object({
 	AZURE_OPENAI_ENDPOINT: z.string().trim().optional(),
 	AZURE_OPENAI_API_KEY: z.string().trim().optional(),
 	AZURE_OPENAI_DEPLOYMENT: z.string().trim().optional(),
-	AZURE_OPENAI_EMBEDDING_DEPLOYMENT: z.string().trim().optional(),
 	AZURE_OPENAI_API_VERSION: z.string().trim().default("preview"),
+	// Embedding model deployment (same resource as the chat model).
+	AZURE_OPENAI_EMBEDDING_DEPLOYMENT: z
+		.string()
+		.trim()
+		.default("text-embedding-3-small"),
 });
 
 export const env = ServicesEnvSchema.parse(process.env);

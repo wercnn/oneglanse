@@ -1,8 +1,10 @@
 import {
 	computeMetrics,
-	embeddingSimilarity,
+	embedTexts,
 	jaccard,
 	lexicalSimilarity,
+	meanCrossCosine,
+	meanPairwiseCosine,
 	type ResponseMetrics,
 } from "./diff.js";
 import type {
@@ -41,13 +43,23 @@ interface PairComparison {
 	b: ResponseSource;
 	domainJaccard: number;
 	lexicalJaccard: number;
-	embeddingCosine: number | null;
+}
+
+type EmbeddingCache = Map<string, number[]>;
+
+/** Embedding cosine: within-source noise floor + cross-source pair means. */
+interface EmbeddingStats {
+	/** Mean pairwise cosine among a source's own samples (null if <2). */
+	within: { source: ResponseSource; cosine: number | null }[];
+	/** Mean cosine across all sample pairs between two sources. */
+	cross: { a: ResponseSource; b: ResponseSource; cosine: number | null }[];
 }
 
 interface PromptReport {
 	prompt: string;
 	sources: SourceAggregate[];
 	comparisons: PairComparison[];
+	embedding?: EmbeddingStats;
 }
 
 interface ComparisonReport {
@@ -124,27 +136,50 @@ function representative(
 	return successful(capturesFor(result, source))[0];
 }
 
-async function comparePair(
+function comparePair(
 	a: CapturedResponse,
 	b: CapturedResponse,
-	withEmbeddings: boolean,
-): Promise<Pick<PairComparison, "domainJaccard" | "lexicalJaccard" | "embeddingCosine">> {
+): Pick<PairComparison, "domainJaccard" | "lexicalJaccard"> {
 	const domainsA = a.sources.map((s) => s.domain).filter((d): d is string => !!d);
 	const domainsB = b.sources.map((s) => s.domain).filter((d): d is string => !!d);
 	return {
 		domainJaccard: jaccard(domainsA, domainsB),
 		lexicalJaccard: lexicalSimilarity(a.response, b.response),
-		embeddingCosine: withEmbeddings
-			? await embeddingSimilarity(a.response, b.response)
-			: null,
 	};
 }
 
-async function buildPromptReport(
+/** Successful response texts for a source. */
+function responsesFor(result: PromptResult, source: ResponseSource): string[] {
+	return successful(capturesFor(result, source)).map((c) => c.response);
+}
+
+function computeEmbeddingStats(
+	result: PromptResult,
+	sources: ResponseSource[],
+	cache: EmbeddingCache,
+): EmbeddingStats {
+	const within = sources.map((source) => ({
+		source,
+		cosine: meanPairwiseCosine(cache, responsesFor(result, source)),
+	}));
+	const cross: EmbeddingStats["cross"] = [];
+	for (const [a, b] of SIMILARITY_PAIRS) {
+		if (!sources.includes(a) || !sources.includes(b)) continue;
+		cross.push({
+			a,
+			b,
+			cosine: meanCrossCosine(cache, responsesFor(result, a), responsesFor(result, b)),
+		});
+	}
+	return { within, cross };
+}
+
+function buildPromptReport(
 	result: PromptResult,
 	sources: ResponseSource[],
 	opts: ReportOptions,
-): Promise<PromptReport> {
+	cache?: EmbeddingCache,
+): PromptReport {
 	const aggregates = sources.map((source) =>
 		aggregateSource(capturesFor(result, source), source, opts.brands),
 	);
@@ -155,11 +190,15 @@ async function buildPromptReport(
 		const repA = representative(result, a);
 		const repB = representative(result, b);
 		if (!repA || !repB) continue;
-		const metrics = await comparePair(repA, repB, opts.embeddings);
-		comparisons.push({ a, b, ...metrics });
+		comparisons.push({ a, b, ...comparePair(repA, repB) });
 	}
 
-	return { prompt: result.prompt, sources: aggregates, comparisons };
+	const embedding =
+		opts.embeddings && cache
+			? computeEmbeddingStats(result, sources, cache)
+			: undefined;
+
+	return { prompt: result.prompt, sources: aggregates, comparisons, embedding };
 }
 
 function fmt(n: number, decimals = 0): string {
@@ -252,11 +291,25 @@ function buildMarkdown(
 	}
 
 	if (opts.embeddings) {
-		const embWebRaw = overlap(["web", "api-raw"], "embeddingCosine");
-		if (embWebRaw.length > 0) {
-			lines.push(
-				`- Avg embedding similarity (web ↔ api-raw): ${fmt(mean(embWebRaw), 2)}`,
-			);
+		const withinAgg = sources
+			.map((s) => {
+				const vals = reports
+					.map((r) => r.embedding?.within.find((w) => w.source === s)?.cosine)
+					.filter((v): v is number => v != null);
+				return vals.length ? `${s} ${fmt(mean(vals), 2)}` : null;
+			})
+			.filter((x): x is string => x !== null);
+		if (withinAgg.length > 0) {
+			lines.push(`- Mean embedding within-source baseline: ${withinAgg.join(" · ")}`);
+		}
+		const crossAgg = SIMILARITY_PAIRS.map(([a, b]) => {
+			const vals = reports
+				.map((r) => r.embedding?.cross.find((c) => c.a === a && c.b === b)?.cosine)
+				.filter((v): v is number => v != null);
+			return vals.length ? `${a} ↔ ${b} ${fmt(mean(vals), 2)}` : null;
+		}).filter((x): x is string => x !== null);
+		if (crossAgg.length > 0) {
+			lines.push(`- Mean embedding cross-source: ${crossAgg.join(" · ")}`);
 		}
 	}
 	lines.push("");
@@ -293,22 +346,33 @@ function buildMarkdown(
 
 		if (report.comparisons.length > 0) {
 			lines.push("**Similarity (representative sample per source)**", "");
-			const simHeader = ["Pair", "domain Jaccard", "lexical Jaccard"];
-			if (opts.embeddings) simHeader.push("embedding cosine");
-			lines.push(`| ${simHeader.join(" | ")} |`);
-			lines.push(`|${simHeader.map(() => "---").join("|")}|`);
+			lines.push("| Pair | domain Jaccard | lexical Jaccard |");
+			lines.push("|---|---|---|");
 			for (const c of report.comparisons) {
-				const row = [
-					`${c.a} ↔ ${c.b}`,
-					fmt(c.domainJaccard, 2),
-					fmt(c.lexicalJaccard, 2),
-				];
-				if (opts.embeddings) {
-					row.push(c.embeddingCosine === null ? "—" : fmt(c.embeddingCosine, 2));
-				}
-				lines.push(`| ${row.join(" | ")} |`);
+				lines.push(
+					`| ${c.a} ↔ ${c.b} | ${fmt(c.domainJaccard, 2)} | ${fmt(c.lexicalJaccard, 2)} |`,
+				);
 			}
 			lines.push("");
+		}
+
+		if (report.embedding) {
+			// within-source baseline = noise floor; cross-source numbers read against it.
+			lines.push("**Embedding cosine (mean pairwise across samples)**", "");
+			lines.push(`| baseline | ${sources.join(" | ")} |`);
+			lines.push(`|---|${sources.map(() => "---").join("|")}|`);
+			const cosCell = (v: number | null | undefined) =>
+				v == null ? "—" : fmt(v, 2);
+			const withinCells = sources.map((s) =>
+				cosCell(report.embedding?.within.find((w) => w.source === s)?.cosine),
+			);
+			lines.push(`| within-source | ${withinCells.join(" | ")} |`, "");
+			const crossParts = report.embedding.cross.map(
+				(c) => `${c.a} ↔ ${c.b} ${cosCell(c.cosine)}`,
+			);
+			if (crossParts.length > 0) {
+				lines.push(`Cross-source: ${crossParts.join(" · ")}`, "");
+			}
 		}
 	});
 
@@ -378,10 +442,22 @@ export async function buildComparisonReport(
 	opts: ReportOptions,
 ): Promise<ComparisonReport> {
 	const sources = presentSources(results);
-	const reports: PromptReport[] = [];
-	for (const result of results) {
-		reports.push(await buildPromptReport(result, sources, opts));
+
+	// Embed every successful response once (batched + deduped) up front.
+	let cache: EmbeddingCache | undefined;
+	if (opts.embeddings) {
+		const texts: string[] = [];
+		for (const result of results) {
+			for (const capture of result.captures) {
+				if (!capture.error && capture.response.trim()) texts.push(capture.response);
+			}
+		}
+		cache = await embedTexts(texts);
 	}
+
+	const reports = results.map((result) =>
+		buildPromptReport(result, sources, opts, cache),
+	);
 
 	return {
 		markdown: buildMarkdown(reports, sources, opts),

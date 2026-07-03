@@ -7,5 +7,5 @@
 	"brands": ["Trendyol", "Hepsiburada", "Amazon", "N11", "GittiGidiyor"],
 	"samples": 3,
 	"modes": ["raw", "grounded"],
-	"embeddings": false
+	"embeddings": true
 }
