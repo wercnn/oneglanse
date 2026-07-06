@@ -1,0 +1,138 @@
+{
+	"samples": 5,
+	"modes": ["raw", "grounded"],
+	"embeddings": true,
+	"brandDict": [
+		{
+			"canonical": "Turkcell",
+			"aliases": ["turkcell"],
+			"role": "target",
+			"domains": ["turkcell.com.tr"]
+		},
+		{
+			"canonical": "Vodafone",
+			"aliases": ["vodafone", "Vodafone Türkiye"],
+			"role": "competitor",
+			"domains": ["vodafone.com.tr"]
+		},
+		{
+			"canonical": "Türk Telekom",
+			"aliases": ["türk telekom", "turk telekom", "TT Mobil", "TT", "Avea"],
+			"role": "competitor",
+			"domains": ["turktelekom.com.tr"]
+		},
+		{
+			"canonical": "TÜRKSAT",
+			"aliases": ["türksat", "turksat"],
+			"role": "control",
+			"domains": ["turksat.com.tr"]
+		},
+		{
+			"canonical": "Superonline",
+			"aliases": ["superonline"],
+			"role": "family",
+			"domains": ["superonline.net"]
+		}
+	],
+	"prompts": [
+		{
+			"text": "Turkcell'in mobil internet paketleri nelerdir?",
+			"intent": "bilgi_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell faturasız hat avantajları nelerdir?",
+			"intent": "bilgi_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Türkiye'de 5G mobil hizmetini hangi operatörler sunuyor?",
+			"intent": "bilgi_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Cep telefonu numaramı başka bir operatöre nasıl taşırım?",
+			"intent": "bilgi_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell mobil müşteri hizmetlerine nasıl ulaşabilirim?",
+			"intent": "bilgi_alma",
+			"brand": "Turkcell"
+		},
+
+		{
+			"text": "En iyi mobil operatör hangisi?",
+			"intent": "karsilastirma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell ile Türk Telekom mobil tarifelerini karşılaştırır mısın?",
+			"intent": "karsilastirma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "En uygun fiyatlı mobil internet paketi hangi operatörde?",
+			"intent": "karsilastirma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Vodafone ve Turkcell faturasız hatlarını karşılaştır.",
+			"intent": "karsilastirma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Hangi mobil operatör daha çok tavsiye ediliyor?",
+			"intent": "karsilastirma",
+			"brand": "Turkcell"
+		},
+
+		{
+			"text": "Turkcell'de yeni bir mobil hat nasıl satın alabilirim?",
+			"intent": "satin_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell faturalı hat kampanyalarına nasıl başvururum?",
+			"intent": "satin_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Online olarak Turkcell'e numara taşıma işlemi nasıl yapılır?",
+			"intent": "satin_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell'den en uygun aylık mobil internet paketini almak istiyorum, önerin var mı?",
+			"intent": "satin_alma",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell mağazasından telefon ve hat birlikte nasıl alınır?",
+			"intent": "satin_alma",
+			"brand": "Turkcell"
+		},
+
+		{ "text": "Turkcell", "intent": "marka_arama", "brand": "Turkcell" },
+		{
+			"text": "Turkcell güncel mobil kampanyalar",
+			"intent": "marka_arama",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell müşteri hizmetlerine nasıl ulaşırım?",
+			"intent": "marka_arama",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell faturamı nasıl öderim?",
+			"intent": "marka_arama",
+			"brand": "Turkcell"
+		},
+		{
+			"text": "Turkcell mobil uygulama",
+			"intent": "marka_arama",
+			"brand": "Turkcell"
+		}
+	]
+}
