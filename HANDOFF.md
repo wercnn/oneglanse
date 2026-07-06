@@ -5,7 +5,10 @@ Resume doc for a fresh session. **No prior context needed beyond this file + the
 - **Spec:** [turkcell-web-vs-api-study-spec.md](turkcell-web-vs-api-study-spec.md) (repo root).
 - **Approved plan (same content):** `~/.claude/plans/synthetic-sleeping-hopper.md`.
 - **Branch:** `local-run-fix-and-compare-plan` (Phase-1 harness already built + committed + pushed).
-- **Status: PLAN ONLY. No code written yet.** Stop point: awaiting user go-ahead to implement.
+- **Status: CODE COMMITTED (2026-07-06) on this branch — 4 commits (steps 1–7). Corpus
+  (`turkcell-mobile.json`) held back, still untracked, pending user prompt refinement.** All four
+  post-build verification checks passed (grounded timer, brand resolver, CSV round-trip, per-prompt
+  calibration). Not pushed. Pilot + two real study runs remain user-triggered.
 
 ## What this is
 Additive extension of the existing web-vs-API comparison harness to run a **Turkcell brand-visibility PoC**
@@ -44,14 +47,14 @@ citation, share-of-voice, cost/reliability.
 
 | Step | File(s) | Status |
 |---|---|---|
-| 1 | `packages/services/src/compare/types.ts` | ☐ not started |
-| 2 | `packages/services/src/compare/brands.ts` (new) | ☐ |
-| 3 | `packages/services/src/compare/diff.ts` | ☐ |
-| 4 | `packages/services/src/compare/export.ts` (new) | ☐ |
-| 5 | `packages/services/src/compare/analysis.ts` (new) | ☐ |
-| 6 | `packages/services/src/index.ts` | ☐ |
-| 7 | `apps/agent/src/run-compare.ts` | ☐ |
-| 8 | `apps/agent/corpora/turkcell-mobile.json` (new) | ☐ |
+| 1 | `packages/services/src/compare/types.ts` | ☑ done |
+| 2 | `packages/services/src/compare/brands.ts` (new) | ☑ (İ/I/ı/i fold via NFD + `\p{Mn}` strip + dotless-I→i) |
+| 3 | `packages/services/src/compare/diff.ts` | ☑ |
+| 4 | `packages/services/src/compare/export.ts` (new) | ☑ |
+| 5 | `packages/services/src/compare/analysis.ts` (new) | ☑ |
+| 6 | `packages/services/src/index.ts` | ☑ |
+| 7 | `apps/agent/src/run-compare.ts` | ☑ |
+| 8 | `apps/agent/corpora/turkcell-mobile.json` (new) | ☐ code committed; corpus pending prompt refinement (untracked) |
 
 ### Step 1 — types.ts (additive)
 ```ts
