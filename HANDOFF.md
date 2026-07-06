@@ -5,10 +5,10 @@ Resume doc for a fresh session. **No prior context needed beyond this file + the
 - **Spec:** [turkcell-web-vs-api-study-spec.md](turkcell-web-vs-api-study-spec.md) (repo root).
 - **Approved plan (same content):** `~/.claude/plans/synthetic-sleeping-hopper.md`.
 - **Branch:** `local-run-fix-and-compare-plan` (Phase-1 harness already built + committed + pushed).
-- **Status: CODE COMMITTED (2026-07-06) on this branch — 4 commits (steps 1–7). Corpus
-  (`turkcell-mobile.json`) held back, still untracked, pending user prompt refinement.** All four
-  post-build verification checks passed (grounded timer, brand resolver, CSV round-trip, per-prompt
-  calibration). Not pushed. Pilot + two real study runs remain user-triggered.
+- **Status: FULLY COMMITTED (2026-07-06) on this branch — all 8 steps (5 code commits + corpus
+  `8ec7b6f` + handoff docs).** All four post-build verification checks passed (grounded timer, brand
+  resolver, CSV round-trip, per-prompt calibration). Not pushed. Pilot + two real study runs remain
+  user-triggered (see "Pilot plan" below).
 
 ## What this is
 Additive extension of the existing web-vs-API comparison harness to run a **Turkcell brand-visibility PoC**
@@ -54,7 +54,7 @@ citation, share-of-voice, cost/reliability.
 | 5 | `packages/services/src/compare/analysis.ts` (new) | ☑ |
 | 6 | `packages/services/src/index.ts` | ☑ |
 | 7 | `apps/agent/src/run-compare.ts` | ☑ |
-| 8 | `apps/agent/corpora/turkcell-mobile.json` (new) | ☐ code committed; corpus pending prompt refinement (untracked) |
+| 8 | `apps/agent/corpora/turkcell-mobile.json` (new) | ☑ committed `8ec7b6f` (20 prompts refined; 2 comparison prompts un-anchored) |
 
 ### Step 1 — types.ts (additive)
 ```ts
@@ -168,6 +168,29 @@ node apps/agent/dist/run-compare.js --export  apps/agent/compare-output/report-2
 ```
 Pilot (3–4 prompts, samples:2, ~$1) and the two real study runs (browser + ~$12–18 + 2 days) are
 **user-triggered**, not part of the build.
+
+## Pilot plan (cheap smoke of the full path — ~$1, browser + API; user-authorized)
+Runs real captures on a 4-prompt subset **before** the two real runs, to de-risk the pipeline. Do **not**
+run the full 20×5 corpus for the pilot. Pilot config + outputs stay **untracked** (do not commit).
+1. `apps/agent/corpora/turkcell-pilot.json` = copy of `turkcell-mobile.json` (SAME `brandDict`,
+   `embeddings:true`, `modes:["raw","grounded"]`, **`samples:2`**) with ONLY these 4 prompts (keep their
+   main-corpus intent/brand tags):
+   - `En iyi mobil operatör hangisi?` (karsilastirma)
+   - `Turkcell` (marka_arama)
+   - `Turkcell ile Türk Telekom mobil tarifelerini karşılaştırır mısın?` (karsilastirma)
+   - `Cep telefonu numaramı başka bir operatöre nasıl taşırım?` (bilgi_alma)
+2. Build dist, then: `node apps/agent/dist/run-compare.js apps/agent/corpora/turkcell-pilot.json`; then
+   `--analyze` and `--export` on the resulting pilot run JSON.
+3. Pilot acceptance checks (the point of the pilot):
+   - **TIMER:** mean `durationMs` per source — grounded MUST be clearly slower than raw (~45–60s vs ~8s).
+     If grounded ≈ raw, **STOP** and fix the timer before the real runs.
+   - **BROWSE SPLIT:** per prompt, did web browse (citations>0)? Expect discovery/comparison to browse,
+     bare `Turkcell` likely not.
+   - **BRAND RESOLUTION (live text):** in the Turkcell-vs-Türk-Telekom responses, Türk Telekom resolves to
+     ONE canonical (not split across TT Mobil/TT/Türk Telekom); Turkcell resolves.
+   - **RELIABILITY:** any web failures/retries/recycles/logged_out (from `webSamples`).
+   - **OUTPUT:** transcript readable; CSV row count = 4 prompts × sources × 2 samples, no split rows.
+4. Real 20×5 runs (2, a day apart → `--analyze run1 run2`) remain **user-triggered after pilot review**.
 
 ## Open questions
 - **TÜRKSAT status** — confirm it's still pre-launch / near-zero before locking it as the negative control.
